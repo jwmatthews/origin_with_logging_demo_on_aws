@@ -1,0 +1,101 @@
+---
+ssh_key_name: ""
+target_dns_zone: ""
+target_subdomain: ""
+instance_name: ""
+instance_lookup_value: ""
+ec2_install: true
+
+#aws_tag_prefix is used to name the various VPC resources so they are only created once per account
+#even if shared with multiple IAM users
+aws_tag_prefix: "logging_demo"
+
+##
+# us-east-1
+##
+aws_region: us-east-1
+aws_ami_id: ami-b63769a1
+
+##
+# us-east-2
+##
+#aws_region: us-east-2
+#aws_ami_id: ami-0932686c
+
+##
+# us-west-1
+##
+#aws_region: us-west-1
+#aws_ami_id:  ami-2cade64c
+
+##
+# us-west-2
+##
+#aws_region: us-west-2
+#aws_ami_id: ami-6f68cf0f
+
+##
+# Canada
+##
+#aws_region: ca-central-1
+#aws_ami_id: ami-9062d0f4
+
+instance_type: c4.4xlarge
+
+# For local setup, especially on Mac the openshift_hostname will be
+# different from the routing_suffix.
+# We expect the openshift_hostname for Mac to be the public IP
+# This is needed so oc cluster up and can ensure it's listening
+# on the correct interface.
+#
+# For ec2 runs this is less important to differentiate and we expect
+# openshift_hostname and openshift_routing_suffix to be the same
+#
+openshift_hostname: "{{target_subdomain}}.{{target_dns_zone}}"
+openshift_routing_suffix: "{{target_subdomain}}.{{target_dns_zone}}"
+openshift_url: "{{ openshift_hostname }}:8443"
+
+use_ssl: True
+email_address: "foo@bar.com"
+
+var_lib_docker_ebs_device_name: "sdc"
+var_lib_docker_block_device: "/dev/xvdc"
+var_lib_docker_mount_point: "/var/lib/docker"
+
+docker_vg_ebs_device_name: "sdd"
+docker_vg_block_device: "/dev/xvdd"
+docker_vg_name: "docker_vg"
+
+persistedvol_ebs_device_name: "sde"
+persistedvol_block_device: "/dev/xvde"
+persistedvol_mount_point: "/persistedvolumes"
+
+tmp_ebs_device_name: "sdf"
+tmp_block_device: "/dev/xvdf"
+tmp_mount_point: "/tmp"
+
+cluster_user: admin
+cluster_user_password: admin
+cluster_system_admin: "system:admin"
+
+oc_client_install_path: "/usr/local/bin"
+oc_cmd: "{{ oc_client_install_path }}/oc"
+oadm_cmd: "{{ oc_client_install_path }}/oadm"
+kubectl_cmd: "{{ oc_client_install_path }}/kubectl"
+
+oc_host_config_dir: /var/lib/origin/openshift.local.config
+
+aws_sec_group_name: "{{ aws_tag_prefix }}_security_group"
+vpc_name: "{{ aws_tag_prefix }}_vpc"
+vpc_cidr_block: "10.0.0.0/16"
+vpc_subnet_a_cidr: "10.0.0.0/24"
+vpc_subnet_a_name: "{{ aws_tag_prefix }}_subnet_a"
+vpc_subnet_b_cidr: "10.0.1.0/24"
+vpc_subnet_b_name: "{{ aws_tag_prefix }}_subnet_b"
+vpc_route_table_name: "{{ aws_tag_prefix }}_route_table"
+rds_subnet_group_name: "{{ aws_tag_prefix }}_rds_group"
+
+docker_images_group:
+  - { img: "docker.io/centos/python-35-centos7", tag: "latest" }
+  - { img: "docker.io/centos/python-34-centos7", tag: "latest" }
+  - { img: "docker.io/centos/python-27-centos7", tag: "latest" }

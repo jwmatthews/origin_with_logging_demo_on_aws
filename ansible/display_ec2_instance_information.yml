@@ -1,0 +1,24 @@
+- hosts: localhost
+  gather_facts: True
+  tasks:
+    - name: EC2 Remote Facts
+      ec2_remote_facts:
+        filters:
+          instance-state-name: running
+          "tag:Name": "{{ instance_name }}"
+        region: "{{ aws_region }}"
+      register: my_ec2_facts
+  post_tasks:
+    - set_fact:
+        msg: |
+            EC-2 Instance Tags:        Name={{ instance_name }}
+            Hostname:                  {{ openshift_hostname }}
+            OpenShift URL:             {{ openshift_url }}
+            SSH Key Name:              {{ ssh_key_name }}
+            Region:                    {{ aws_region }}
+            Next steps:
+            Visit https://{{ openshift_hostname }}:8443 for the console
+            For CLI access:
+            oc login --insecure-skip-tls-verify {{ openshift_hostname }}:8443 -u {{ cluster_user }} -p {{ cluster_user_password }}
+    - debug:
+        msg: "{{ msg.split('\n') }}"

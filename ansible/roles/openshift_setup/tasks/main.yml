@@ -1,0 +1,136 @@
+---
+  - set_fact:
+      oc_tools_dir: /usr/local/bin
+    when: ec2_install
+
+  - set_fact:
+      oc_tools_dir: "{{ ansible_env.HOME }}/bin"
+    when: not ec2_install
+
+  - set_fact:
+      oc_cmd: "{{ oc_tools_dir }}/oc"
+
+  - set_fact:
+      oadm_cmd: "{{ oc_tools_dir }}/oc adm"
+
+  - set_fact:
+      openshift_client_release_url: https://github.com/openshift/origin/releases/download/v1.5.1/openshift-origin-client-tools-v1.5.1-7b451fc-linux-64bit.tar.gz
+      openshift_client_release_file: openshift-origin-client-tools-v1.5.1-7b451fc-linux-64bit.tar.gz
+      openshift_client_release: openshift-origin-client-tools-v1.5.1-7b451fc-linux-64bit
+
+  - file:
+      path: "{{ oc_tools_dir }}"
+      state: directory
+      mode: 0755
+
+  - name: Download oc binary "{{ openshift_client_release_url }}"
+    get_url:
+      url: "{{ openshift_client_release_url }}"
+      dest: /tmp/{{ openshift_client_release_file }}
+      mode: 0440
+    register: get_openshift_release
+
+  - name: Untar {{ openshift_client_release_file }}
+    shell: tar -xzf /tmp/{{ openshift_client_release_file }} -C /tmp
+    when: get_openshift_release.changed
+
+  - name: Install oc
+    copy:
+      remote_src: True
+      src: /tmp/{{ openshift_client_release }}/oc
+      dest: "{{ oc_tools_dir }}/oc"
+      mode: 0755
+
+  - name: Wait, up to 20 minutes, till we can SSH into the host with the DNS name '{{ openshift_hostname }}'
+    wait_for:
+      host: "{{ openshift_hostname }}"
+      port: 22
+      delay: 0
+      timeout: 1200
+      state: started
+    when: ec2_install
+
+  # ec2 install will mount a ebs volume, for local we just need to create a directory
+  - name: Ensure {{ persistedvol_mount_point }} directory exists if running in local mode
+    file:
+      path: "{{ persistedvol_mount_point }}"
+      state: directory
+      mode: 0755
+    become: 'true'
+    when: not ec2_install
+
+  - name: Resetting cluster, {{ reset_cluster }}
+    shell: "{{ oc_cmd }} cluster down"
+    when: reset_cluster
+
+  - name: Install docker-py through pip as it's a requirement of ansible docker module
+    pip:
+      name: docker-py
+      version: 1.10.6
+    become: 'true'
+
+  - name: Pulling all docker images we require
+    docker_image:
+      name: "{{ item.img }}"
+      state: present
+      tag: "{{ item.tag }}"
+    with_items:
+      - "{{ docker_images_group }}"
+
+  - name: Running oc cluster status
+    shell: "{{ oc_cmd }} cluster status | cat"
+    register: oc_cluster_status
+
+  - name: Set a fact to track the first run of oc cluster up
+    set_fact:
+      oc_cluster_up_first_run: False
+
+  - name: This is the first run so set to True
+    set_fact:
+      oc_cluster_up_first_run: True
+    when: "not 'cluster was started' in oc_cluster_status.stdout"
+
+  - name: Create command line for oc cluster up execution
+    set_fact:
+      oc_cluster_up_cmd: "{{ oc_cmd }} cluster up --routing-suffix={{ openshift_routing_suffix }} --public-hostname={{ openshift_hostname }} --host-pv-dir={{ persistedvol_mount_point }} --host-config-dir={{ oc_host_config_dir }} --logging"
+
+  - debug:
+      msg: "Looking at oc cluster up command:  '{{ oc_cluster_up_cmd }}'"
+
+  # Intent of this oc cluster up is generate the master-config.yaml so we can make edits to it
+  - name: Run oc cluster up
+    shell: "{{ oc_cluster_up_cmd }}"
+    when: oc_cluster_up_first_run
+    register: oc_cluster_up
+
+  - debug:
+      msg: "oc_cluster_up_first_run = {{ oc_cluster_up_first_run }}, oc_cluster_status.stdout = '{{ oc_cluster_status.stdout }}'"
+
+  #
+  # Add permissions to desired openshift user
+  # Would be nice if we looked at existing users and permissions and made decisions of what to run
+  # for now, will only run these if we've run oc cluster up
+  #
+  - name: Login as {{ cluster_system_admin }}
+    shell: "{{ oc_cmd }} login -u {{ cluster_system_admin }}"
+    when: oc_cluster_up.changed
+
+  - name: Create user {{ cluster_user }}
+    shell: "{{ oc_cmd }} create user {{ cluster_user }}"
+    when: oc_cluster_up.changed
+
+  - name: Add cluster-admin role to {{ cluster_user }}
+    shell: "{{ oc_cmd }} adm policy add-cluster-role-to-user cluster-admin {{ cluster_user }}"
+    when: oc_cluster_up.changed
+
+  - name: Add privileged scc to {{ cluster_user }}
+    shell: "{{ oc_cmd }} adm policy add-scc-to-user privileged {{ cluster_user }}"
+    when: oc_cluster_up.changed
+
+  - name: Add anyuid scc to system:authenticated
+    shell: "{{ oc_cmd }} adm policy add-scc-to-group anyuid system:authenticated"
+    when: oc_cluster_up.changed
+
+  - name: Login as {{ cluster_user }}
+    shell: "{{ oc_cmd }} login -u {{ cluster_user }} -p {{ cluster_user_password }}"
+    when: oc_cluster_up.changed
